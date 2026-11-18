@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>试封汇总对外专用页 · 隐私网关</title>
+<style>
+  :root {
+    --ink: #1f2933; --muted: #6b7280; --line: #d7dde3;
+    --bg: #f5f6f8; --card: #ffffff; --ok: #15803d; --ok-bg: #e8f5ec;
+    --deny: #b42318; --deny-bg: #fdeceb; --accent: #1d4ed8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Noto Serif SC", "Songti SC", serif; line-height: 1.55;
+  }
+  header { padding: 22px 28px 14px; border-bottom: 1px solid var(--line); background: var(--card); }
+  header h1 { margin: 0 0 4px; font-size: 20px; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+  main { max-width: 1020px; margin: 22px auto; padding: 0 20px 48px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; margin-bottom: 18px; }
+  .card h2 { margin: 0 0 12px; font-size: 15px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  input, button { font: inherit; }
+  input[type="password"], input[type="text"] {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px;
+  }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .row > div { flex: 1 1 220px; }
+  button {
+    background: var(--accent); color: #fff; border: 0; border-radius: 7px;
+    padding: 9px 18px; cursor: pointer; margin-top: 14px;
+  }
+  button.secondary { background: #eef2ff; color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .pill.approved { color: var(--ok); background: var(--ok-bg); }
+  .pill.rejected { color: var(--deny); background: var(--deny-bg); }
+  .value { font-size: 15px; font-weight: 700; color: var(--ok); }
+  .reason { color: var(--deny); }
+  .muted { color: var(--muted); font-size: 12px; }
+  .banner { padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; font-size: 13px; display: none; }
+  .banner.err { background: var(--deny-bg); color: var(--deny); display: block; }
+  .banner.ok { background: var(--ok-bg); color: var(--ok); display: block; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .chip { border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: 12px; cursor: pointer; user-select: none; }
+  .chip.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>试封汇总对外专用页</h1>
+  <p>仅展示已公开的各批 A/B 总数与获准汇总值；拒绝时显示拒绝原因。原数据入口不对本页角色开放。</p>
+</header>
+<main>
+  <section class="card">
+    <h2>1. 对外访问令牌</h2>
+    <label for="token">Bearer 令牌（仅保存在本页内存，不写入本地存储）</label>
+    <div class="row">
+      <div><input id="token" type="password" placeholder="粘贴对外角色令牌" autocomplete="off" /></div>
+      <div style="flex:0 0 auto;"><button id="connect" type="button">载入公开数据</button></div>
+    </div>
+    <div id="authBanner" class="banner"></div>
+  </section>
+
+  <section class="card" id="batchesCard" hidden>
+    <h2>2. 冻结发布集合（至多 12 批，仅公开 A/B 总数）</h2>
+    <table>
+      <thead><tr><th>批次</th><th>A 组总数</th><th>B 组总数</th><th>选择</th></tr></thead>
+      <tbody id="batchRows"></tbody>
+    </table>
+    <div class="note">合格数属于内部研究数据，本页无法查看单批试封合格计数。</div>
+  </section>
+
+  <section class="card" id="applyCard" hidden>
+    <h2>3. 申请子集两组合格数之和</h2>
+    <div class="chips" id="subsetChips"></div>
+    <div class="row" style="margin-top:14px;">
+      <div style="flex:2 1 320px;">
+        <label for="requestId">request_id（重试请复用同一值，保证不重复发布）</label>
+        <input id="requestId" type="text" class="mono" placeholder="例如 req-20261118-001" />
+      </div>
+      <div style="flex:1 1 160px; align-self:flex-end;">
+        <button id="submitBtn" type="button">提交申请</button>
+        <button id="refreshBtn" type="button" class="secondary">刷新裁决</button>
+      </div>
+    </div>
+    <div id="applyBanner" class="banner"></div>
+    <div class="note">裁决基于全部已公开回答与本次候选的联合整数可行域；任一“批×组”最小/最大可行合格数相差不足 2 即拒绝。</div>
+  </section>
+
+  <section class="card" id="decisionsCard" hidden>
+    <h2>4. 裁决与已公开回答</h2>
+    <table>
+      <thead><tr><th>request_id</th><th>子集</th><th>裁决</th><th>获准值 / 拒绝原因</th></tr></thead>
+      <tbody id="decisionRows"></tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let batches = [];
+const selected = new Set();
+
+function banner(el, kind, text) {
+  el.className = "banner " + kind;
+  el.textContent = text;
+}
+function clearBanner(el) { el.className = "banner"; el.textContent = ""; }
+
+async function api(path, options = {}) {
+  const token = $("token").value.trim();
+  const res = await fetch(path, {
+    ...options,
+    headers: {
+      "Authorization": "Bearer " + token,
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const detail = data.detail || data.error || ("HTTP " + res.status);
+    const err = new Error(detail);
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
+async function connect() {
+  clearBanner($("authBanner"));
+  try {
+    batches = await api("/api/public/batches");
+    renderBatches();
+    await loadDecisions();
+    $("batchesCard").hidden = false;
+    $("applyCard").hidden = false;
+    $("decisionsCard").hidden = false;
+    banner($("authBanner"), "ok", "已载入 " + batches.length + " 个冻结批次的公开总数。");
+  } catch (err) {
+    $("batchesCard").hidden = $("applyCard").hidden = $("decisionsCard").hidden = true;
+    banner($("authBanner"), "err", "载入失败：" + err.message);
+  }
+}
+
+function renderBatches() {
+  $("batchRows").innerHTML = "";
+  $("subsetChips").innerHTML = "";
+  selected.clear();
+  for (const b of batches) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = "<td class='mono'></td><td></td><td></td><td></td>";
+    tr.children[0].textContent = b.batch_id;
+    tr.children[1].textContent = b.total_a;
+    tr.children[2].textContent = b.total_b;
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.addEventListener("change", () => toggleBatch(b.batch_id, cb.checked));
+    tr.children[3].appendChild(cb);
+    $("batchRows").appendChild(tr);
+
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    chip.textContent = b.batch_id;
+    chip.addEventListener("click", () => {
+      const on = !selected.has(b.batch_id);
+      toggleBatch(b.batch_id, on);
+      cb.checked = on;
+    });
+    chip.dataset.batch = b.batch_id;
+    $("subsetChips").appendChild(chip);
+  }
+}
+
+function toggleBatch(id, on) {
+  if (on) selected.add(id); else selected.delete(id);
+  const chip = [...$("subsetChips").children].find((c) => c.dataset.batch === id);
+  if (chip) chip.classList.toggle("on", on);
+}
+
+async function submitRequest() {
+  clearBanner($("applyBanner"));
+  const requestId = $("requestId").value.trim();
+  if (!requestId) return banner($("applyBanner"), "err", "请填写 request_id。");
+  if (selected.size === 0) return banner($("applyBanner"), "err", "请至少选择一个批次。");
+  try {
+    const result = await api("/api/public/aggregation-requests", {
+      method: "POST",
+      body: JSON.stringify({ request_id: requestId, subset: [...selected] }),
+    });
+    if (result.status === "approved") {
+      banner($("applyBanner"), "ok", "获准发布，汇总值 = " + result.value);
+    } else {
+      banner($("applyBanner"), "err", "被拒绝：" + (result.reason || "联合隐私检查未通过") +
+        (result.violating && result.violating.length ? "（涉及 " + result.violating.join(", ") + "）" : ""));
+    }
+    await loadDecisions();
+  } catch (err) {
+    banner($("applyBanner"), "err", "申请失败：" + err.message);
+  }
+}
+
+async function loadDecisions() {
+  const decisions = await api("/api/public/decisions");
+  const tbody = $("decisionRows");
+  tbody.innerHTML = "";
+  if (!decisions.length) {
+    tbody.innerHTML = "<tr><td colspan='4' class='muted'>尚无裁决记录。</td></tr>";
+    return;
+  }
+  for (const d of decisions) {
+    const tr = document.createElement("tr");
+    const tdId = document.createElement("td"); tdId.className = "mono"; tdId.textContent = d.request_id;
+    const tdSub = document.createElement("td"); tdSub.className = "mono"; tdSub.textContent = d.subset.join(", ");
+    const tdStatus = document.createElement("td");
+    const pill = document.createElement("span");
+    pill.className = "pill " + d.status;
+    pill.textContent = d.status === "approved" ? "获准" : "拒绝";
+    tdStatus.appendChild(pill);
+    const tdOut = document.createElement("td");
+    if (d.status === "approved") {
+      const v = document.createElement("span"); v.className = "value"; v.textContent = String(d.value);
+      tdOut.appendChild(v);
+    } else {
+      const r = document.createElement("span"); r.className = "reason";
+      r.textContent = d.reason || "联合隐私检查未通过";
+      tdOut.appendChild(r);
+      if (d.violating && d.violating.length) {
+        const extra = document.createElement("div"); extra.className = "muted";
+        extra.textContent = "涉及变量：" + d.violating.join(", ");
+        tdOut.appendChild(extra);
+      }
+    }
+    tr.append(tdId, tdSub, tdStatus, tdOut);
+    tbody.appendChild(tr);
+  }
+}
+
+$("connect").addEventListener("click", connect);
+$("submitBtn").addEventListener("click", submitRequest);
+$("refreshBtn").addEventListener("click", () => loadDecisions().catch((e) => banner($("applyBanner"), "err", e.message)));
+$("token").addEventListener("keydown", (e) => { if (e.key === "Enter") connect(); });
+</script>
+</body>
+</html>
